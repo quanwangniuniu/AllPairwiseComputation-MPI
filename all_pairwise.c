@@ -3,6 +3,8 @@
 #include <string.h>
 #include <errno.h>
 #include <time.h>
+#include <mpi.h>
+#include <math.h>
 #include "all_pairwise.h"
 
 /**
