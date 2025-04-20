@@ -190,8 +190,8 @@ void distribute_matrix(void *input_matrix, void **local_matrix, Config *config, 
     local_info->row_offsets = (int*)malloc(config->num_procs * sizeof(int));
     
     // Calculate rows per process
-    int base_rows = config->N / config->num_procs;
-    int extra_rows = config->N % config->num_procs;
+    int base_rows = config->M / config->num_procs;
+    int extra_rows = config->M % config->num_procs;
     
     // Distribute rows
     int offset = 0;
@@ -208,17 +208,29 @@ void distribute_matrix(void *input_matrix, void **local_matrix, Config *config, 
     
     // Allocate local matrix
     size_t element_size = config->is_float ? sizeof(float) : sizeof(double);
-    *local_matrix = malloc(local_info->local_rows * config->M * element_size);
+    *local_matrix = malloc(local_info->local_rows * config->N * element_size);
     
     // Scatter matrix rows
     if (config->is_float) {
-        MPI_Scatterv(input_matrix, local_info->row_counts, local_info->row_offsets,
-                    MPI_FLOAT, *local_matrix, local_info->local_rows * config->M,
-                    MPI_FLOAT, 0, MPI_COMM_WORLD);
+        MPI_Scatterv(input_matrix, 
+                    local_info->row_counts, 
+                    local_info->row_offsets, 
+                    MPI_FLOAT,
+                    *local_matrix, 
+                    local_info->local_rows * config->N,
+                    MPI_FLOAT, 
+                    0, 
+                    MPI_COMM_WORLD);
     } else {
-        MPI_Scatterv(input_matrix, local_info->row_counts, local_info->row_offsets,
-                    MPI_DOUBLE, *local_matrix, local_info->local_rows * config->M,
-                    MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        MPI_Scatterv(input_matrix, 
+                    local_info->row_counts, 
+                    local_info->row_offsets, 
+                    MPI_DOUBLE,
+                    *local_matrix, 
+                    local_info->local_rows * config->N,
+                    MPI_DOUBLE, 
+                    0, 
+                    MPI_COMM_WORLD);
     }
 }
 
@@ -234,6 +246,7 @@ void gather_results(void *result_matrix, void *local_result, Config *config, Loc
     int *result_counts = (int*)malloc(config->num_procs * sizeof(int));
     int *result_offsets = (int*)malloc(config->num_procs * sizeof(int));
     
+    // Each process contributes local_rows * M elements to the result
     for (int i = 0; i < config->num_procs; i++) {
         result_counts[i] = local_info->row_counts[i] * config->M;
         result_offsets[i] = local_info->row_offsets[i] * config->M;
@@ -241,13 +254,45 @@ void gather_results(void *result_matrix, void *local_result, Config *config, Loc
     
     // Gather results
     if (config->is_float) {
-        MPI_Gatherv(local_result, local_info->local_rows * config->M, MPI_FLOAT,
-                   result_matrix, result_counts, result_offsets, MPI_FLOAT,
-                   0, MPI_COMM_WORLD);
+        MPI_Gatherv(local_result, 
+                   local_info->local_rows * config->M, 
+                   MPI_FLOAT,
+                   result_matrix, 
+                   result_counts, 
+                   result_offsets, 
+                   MPI_FLOAT,
+                   0, 
+                   MPI_COMM_WORLD);
+        
+        // Zero out lower triangle (only in rank 0)
+        if (config->rank == 0) {
+            float *result = (float*)result_matrix;
+            for (int i = 0; i < config->M; i++) {
+                for (int j = 0; j < i; j++) {
+                    result[i * config->M + j] = 0.0f;
+                }
+            }
+        }
     } else {
-        MPI_Gatherv(local_result, local_info->local_rows * config->M, MPI_DOUBLE,
-                   result_matrix, result_counts, result_offsets, MPI_DOUBLE,
-                   0, MPI_COMM_WORLD);
+        MPI_Gatherv(local_result, 
+                   local_info->local_rows * config->M, 
+                   MPI_DOUBLE,
+                   result_matrix, 
+                   result_counts, 
+                   result_offsets, 
+                   MPI_DOUBLE,
+                   0, 
+                   MPI_COMM_WORLD);
+        
+        // Zero out lower triangle (only in rank 0)
+        if (config->rank == 0) {
+            double *result = (double*)result_matrix;
+            for (int i = 0; i < config->M; i++) {
+                for (int j = 0; j < i; j++) {
+                    result[i * config->M + j] = 0.0;
+                }
+            }
+        }
     }
     
     free(result_counts);
@@ -267,33 +312,51 @@ void compute_all_pairwise_distributed(void *input_matrix, void *result_matrix, C
     // Distribute matrix among processes
     distribute_matrix(input_matrix, &local_matrix, config, &local_info);
     
+    // Broadcast the entire input matrix to all processes
+    void *full_matrix = NULL;
+    if (config->rank != 0) {
+        full_matrix = allocate_matrix(config->M, config->N, config->is_float);
+    } else {
+        full_matrix = input_matrix;
+    }
+    
+    if (config->is_float) {
+        MPI_Bcast(full_matrix, config->M * config->N, MPI_FLOAT, 0, MPI_COMM_WORLD);
+    } else {
+        MPI_Bcast(full_matrix, config->M * config->N, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    }
+    
     // Allocate local result matrix
     size_t element_size = config->is_float ? sizeof(float) : sizeof(double);
     void *local_result = malloc(local_info.local_rows * config->M * element_size);
     
     // Perform local computations
     if (config->is_float) {
-        float *matrix = (float*)local_matrix;
+        float *matrix = (float*)full_matrix;
         float *result = (float*)local_result;
         
-        for (int i = 0; i < local_info.local_rows; i++) {
+        // Each process computes its assigned rows
+        for (int i = local_info.start_row; i < local_info.end_row; i++) {
+            int local_i = i - local_info.start_row;  // Convert to local index
             for (int j = 0; j < config->M; j++) {
-                result[i * config->M + j] = dot_product_float(
-                    &matrix[i * config->M],
-                    &matrix[j * config->M],
+                result[local_i * config->M + j] = dot_product_float(
+                    &matrix[i * config->N],
+                    &matrix[j * config->N],
                     config->N
                 );
             }
         }
     } else {
-        double *matrix = (double*)local_matrix;
+        double *matrix = (double*)full_matrix;
         double *result = (double*)local_result;
         
-        for (int i = 0; i < local_info.local_rows; i++) {
+        // Each process computes its assigned rows
+        for (int i = local_info.start_row; i < local_info.end_row; i++) {
+            int local_i = i - local_info.start_row;  // Convert to local index
             for (int j = 0; j < config->M; j++) {
-                result[i * config->M + j] = dot_product_double(
-                    &matrix[i * config->M],
-                    &matrix[j * config->M],
+                result[local_i * config->M + j] = dot_product_double(
+                    &matrix[i * config->N],
+                    &matrix[j * config->N],
                     config->N
                 );
             }
@@ -306,6 +369,9 @@ void compute_all_pairwise_distributed(void *input_matrix, void *result_matrix, C
     // Clean up
     free(local_matrix);
     free(local_result);
+    if (config->rank != 0) {
+        free(full_matrix);
+    }
     free(local_info.row_counts);
     free(local_info.row_offsets);
 }

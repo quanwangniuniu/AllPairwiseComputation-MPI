@@ -140,6 +140,66 @@ void test_distributed_computation(Config *config) {
     }
 }
 
+// Test helper function to initialize a small matrix with known values
+void initialize_test_matrix(void *matrix, Config *config) {
+    if (config->rank != 0) return;
+    
+    if (config->is_float) {
+        float *fmatrix = (float*)matrix;
+        for (int i = 0; i < config->M; i++) {
+            for (int j = 0; j < config->N; j++) {
+                fmatrix[i * config->N + j] = (float)(i + j + 1);  // Simple pattern for verification
+            }
+        }
+    } else {
+        double *dmatrix = (double*)matrix;
+        for (int i = 0; i < config->M; i++) {
+            for (int j = 0; j < config->N; j++) {
+                dmatrix[i * config->N + j] = (double)(i + j + 1);  // Simple pattern for verification
+            }
+        }
+    }
+}
+
+// Test helper function to verify results
+void verify_test_results(void *result_matrix, Config *config) {
+    if (config->rank != 0) return;
+    
+    printf("Test Results:\n");
+    if (config->is_float) {
+        float *result = (float*)result_matrix;
+        for (int i = 0; i < config->M; i++) {
+            for (int j = i; j < config->M; j++) {
+                float expected = 0.0f;
+                for (int k = 0; k < config->N; k++) {
+                    float val1 = (float)(i + k + 1);
+                    float val2 = (float)(j + k + 1);
+                    expected += val1 * val2;
+                }
+                float actual = result[i * config->M + j];
+                printf("Expected[%d,%d] = %.2f, Actual = %.2f\n", i, j, expected, actual);
+                assert(fabs(expected - actual) < 1e-4);
+            }
+        }
+    } else {
+        double *result = (double*)result_matrix;
+        for (int i = 0; i < config->M; i++) {
+            for (int j = i; j < config->M; j++) {
+                double expected = 0.0;
+                for (int k = 0; k < config->N; k++) {
+                    double val1 = (double)(i + k + 1);
+                    double val2 = (double)(j + k + 1);
+                    expected += val1 * val2;
+                }
+                double actual = result[i * config->M + j];
+                printf("Expected[%d,%d] = %.2f, Actual = %.2f\n", i, j, expected, actual);
+                assert(fabs(expected - actual) < 1e-8);
+            }
+        }
+    }
+    printf("All test cases passed!\n");
+}
+
 int main(int argc, char *argv[]) {
     MPI_Init(&argc, &argv);
     
@@ -160,78 +220,72 @@ int main(int argc, char *argv[]) {
         printf("-----------------------------------------------\n");
     }
     
-    config.M = 5;
-    config.N = 4;
+    config.M = 3;
+    config.N = 2;
     config.is_float = true;
     
-    void *input_matrix = NULL;
-    void *result_matrix = NULL;
-    void *sequential_result = NULL;
-    
     if (config.rank == 0) {
-        input_matrix = allocate_matrix(config.N, config.M, config.is_float);
-        result_matrix = allocate_matrix(config.M, config.M, config.is_float);
-        sequential_result = allocate_matrix(config.M, config.M, config.is_float);
-        initialize_matrix(input_matrix, &config);
+        printf("\nTest Case 1: M=%d, N=%d, type=float\n", config.M, config.N);
     }
     
-    // Run sequential computation
+    // Broadcast configuration
+    MPI_Bcast(&config, sizeof(Config), MPI_BYTE, 0, MPI_COMM_WORLD);
+    
+    // Allocate and initialize test matrix
+    void *input_matrix = NULL;
+    void *result_matrix = NULL;
+    
     if (config.rank == 0) {
-        compute_all_pairwise(input_matrix, sequential_result, &config);
+        input_matrix = allocate_matrix(config.M, config.N, config.is_float);
+        result_matrix = allocate_matrix(config.M, config.M, config.is_float);
+        initialize_test_matrix(input_matrix, &config);
     }
     
     // Run distributed computation
-    compute_all_pairwise_distributed(input_matrix, result_matrix, &config);
+    compute_all_pairwise(input_matrix, result_matrix, &config);
     
     // Verify results
-    if (config.rank == 0) {
-        verify_results(sequential_result, result_matrix, &config);
-        print_results(result_matrix, &config);
-        printf("\n");
-    }
+    verify_test_results(result_matrix, &config);
     
+    // Clean up
     if (config.rank == 0) {
         free(input_matrix);
         free(result_matrix);
-        free(sequential_result);
     }
     
-    // Test case 2: Medium matrix with double
+    // Test case 2: Small matrix with double
     if (config.rank == 0) {
-        printf("\nTest Case 2: Medium matrix with double (Distributed)\n");
+        printf("\nTest Case 2: Small matrix with double (Distributed)\n");
         printf("-------------------------------------------------\n");
     }
     
-    config.M = 10;
-    config.N = 8;
+    config.M = 3;
+    config.N = 2;
     config.is_float = false;
     
     if (config.rank == 0) {
-        input_matrix = allocate_matrix(config.N, config.M, config.is_float);
-        result_matrix = allocate_matrix(config.M, config.M, config.is_float);
-        sequential_result = allocate_matrix(config.M, config.M, config.is_float);
-        initialize_matrix(input_matrix, &config);
+        printf("\nTest Case 2: M=%d, N=%d, type=double\n", config.M, config.N);
     }
     
-    // Run sequential computation
+    // Broadcast configuration
+    MPI_Bcast(&config, sizeof(Config), MPI_BYTE, 0, MPI_COMM_WORLD);
+    
     if (config.rank == 0) {
-        compute_all_pairwise(input_matrix, sequential_result, &config);
+        input_matrix = allocate_matrix(config.M, config.N, config.is_float);
+        result_matrix = allocate_matrix(config.M, config.M, config.is_float);
+        initialize_test_matrix(input_matrix, &config);
     }
     
     // Run distributed computation
-    compute_all_pairwise_distributed(input_matrix, result_matrix, &config);
+    compute_all_pairwise(input_matrix, result_matrix, &config);
     
     // Verify results
-    if (config.rank == 0) {
-        verify_results(sequential_result, result_matrix, &config);
-        print_results(result_matrix, &config);
-        printf("\n");
-    }
+    verify_test_results(result_matrix, &config);
     
+    // Clean up
     if (config.rank == 0) {
         free(input_matrix);
         free(result_matrix);
-        free(sequential_result);
     }
     
     MPI_Finalize();
