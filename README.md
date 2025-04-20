@@ -1,5 +1,9 @@
 # All Pairwise Computation - MPI Implementation
 
+> **Copyright © 2024 The University of Sydney. All rights reserved.**
+> 
+> This is an academic research project conducted at the University of Sydney. Unauthorized use, reproduction, or distribution of this work is strictly prohibited. For more information, please refer to the [ACADEMIC_DISCLAIMER.md](ACADEMIC_DISCLAIMER.md) file.
+
 ## Overview
 This project implements a distributed-memory algorithm for computing pairwise dot products between sequences using MPI (Message Passing Interface). The implementation supports both sequential and parallel computation modes, with automatic selection based on the number of available processes.
 
