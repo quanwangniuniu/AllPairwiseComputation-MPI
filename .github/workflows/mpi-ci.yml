@@ -5,14 +5,11 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:  # Add manual trigger option
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        mpi: [openmpi]
-        compiler: [gcc]
+    runs-on: ubuntu-latest  # Use GitHub-hosted Ubuntu runner
     
     steps:
     - uses: actions/checkout@v3
