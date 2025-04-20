@@ -300,65 +300,122 @@ void gather_results(void *result_matrix, void *local_result, Config *config, Loc
 }
 
 /**
- * Computes all pairwise dot products in distributed manner
- * @param input_matrix Input matrix containing sequences
- * @param result_matrix Matrix to store dot product results
+ * Computes all pairwise dot products in distributed mode
+ * @param input_matrix Full input matrix (only valid in process 0)
+ * @param result_matrix Full result matrix (only valid in process 0)
  * @param config Program configuration
  */
 void compute_all_pairwise_distributed(void *input_matrix, void *result_matrix, Config *config) {
     LocalInfo local_info;
     void *local_matrix = NULL;
+    void *local_result = NULL;
     
-    // Distribute matrix among processes
+    // Distribute input matrix
     distribute_matrix(input_matrix, &local_matrix, config, &local_info);
-    
-    // Broadcast the entire input matrix to all processes
-    void *full_matrix = NULL;
-    if (config->rank != 0) {
-        full_matrix = allocate_matrix(config->M, config->N, config->is_float);
-    } else {
-        full_matrix = input_matrix;
-    }
-    
-    if (config->is_float) {
-        MPI_Bcast(full_matrix, config->M * config->N, MPI_FLOAT, 0, MPI_COMM_WORLD);
-    } else {
-        MPI_Bcast(full_matrix, config->M * config->N, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    }
     
     // Allocate local result matrix
     size_t element_size = config->is_float ? sizeof(float) : sizeof(double);
-    void *local_result = malloc(local_info.local_rows * config->M * element_size);
+    local_result = malloc(local_info.local_rows * config->M * element_size);
     
-    // Perform local computations
-    if (config->is_float) {
-        float *matrix = (float*)full_matrix;
-        float *result = (float*)local_result;
+    // Initialize local result to zero
+    memset(local_result, 0, local_info.local_rows * config->M * element_size);
+    
+    // Temporary buffer for receiving columns
+    void *column_buffer = malloc(config->N * element_size);
+    
+    // Compute local portion of result matrix
+    for (int i = 0; i < local_info.local_rows; i++) {
+        int global_i = local_info.start_row + i;
         
-        // Each process computes its assigned rows
-        for (int i = local_info.start_row; i < local_info.end_row; i++) {
-            int local_i = i - local_info.start_row;  // Convert to local index
-            for (int j = 0; j < config->M; j++) {
-                result[local_i * config->M + j] = dot_product_float(
-                    &matrix[i * config->N],
-                    &matrix[j * config->N],
-                    config->N
-                );
-            }
-        }
-    } else {
-        double *matrix = (double*)full_matrix;
-        double *result = (double*)local_result;
-        
-        // Each process computes its assigned rows
-        for (int i = local_info.start_row; i < local_info.end_row; i++) {
-            int local_i = i - local_info.start_row;  // Convert to local index
-            for (int j = 0; j < config->M; j++) {
-                result[local_i * config->M + j] = dot_product_double(
-                    &matrix[i * config->N],
-                    &matrix[j * config->N],
-                    config->N
-                );
+        // Process 0 has its own data, others need to request it
+        for (int j = global_i; j < config->M; j++) {
+            // If we need data from another process
+            if (j >= local_info.start_row && j < local_info.end_row) {
+                // Data is local, use it directly
+                if (config->is_float) {
+                    float result = dot_product_float(
+                        (float*)local_matrix + i * config->N,
+                        (float*)local_matrix + (j - local_info.start_row) * config->N,
+                        config->N
+                    );
+                    ((float*)local_result)[i * config->M + j] = result;
+                } else {
+                    double result = dot_product_double(
+                        (double*)local_matrix + i * config->N,
+                        (double*)local_matrix + (j - local_info.start_row) * config->N,
+                        config->N
+                    );
+                    ((double*)local_result)[i * config->M + j] = result;
+                }
+            } else {
+                // Find which process has the data we need
+                int target_rank = 0;
+                for (int p = 0; p < config->num_procs; p++) {
+                    if (j >= local_info.row_offsets[p] && 
+                        j < local_info.row_offsets[p] + local_info.row_counts[p]) {
+                        target_rank = p;
+                        break;
+                    }
+                }
+                
+                // Request the column from the target process
+                if (config->rank == target_rank) {
+                    // Send the column
+                    if (config->is_float) {
+                        MPI_Send(
+                            (float*)local_matrix + (j - local_info.start_row) * config->N,
+                            config->N,
+                            MPI_FLOAT,
+                            config->rank,
+                            0,
+                            MPI_COMM_WORLD
+                        );
+                    } else {
+                        MPI_Send(
+                            (double*)local_matrix + (j - local_info.start_row) * config->N,
+                            config->N,
+                            MPI_DOUBLE,
+                            config->rank,
+                            0,
+                            MPI_COMM_WORLD
+                        );
+                    }
+                } else if (config->rank == 0) {
+                    // Receive the column
+                    if (config->is_float) {
+                        MPI_Recv(
+                            column_buffer,
+                            config->N,
+                            MPI_FLOAT,
+                            target_rank,
+                            0,
+                            MPI_COMM_WORLD,
+                            MPI_STATUS_IGNORE
+                        );
+                        float result = dot_product_float(
+                            (float*)local_matrix + i * config->N,
+                            (float*)column_buffer,
+                            config->N
+                        );
+                        ((float*)local_result)[i * config->M + j] = result;
+                    } else {
+                        MPI_Recv(
+                            column_buffer,
+                            config->N,
+                            MPI_DOUBLE,
+                            target_rank,
+                            0,
+                            MPI_COMM_WORLD,
+                            MPI_STATUS_IGNORE
+                        );
+                        double result = dot_product_double(
+                            (double*)local_matrix + i * config->N,
+                            (double*)column_buffer,
+                            config->N
+                        );
+                        ((double*)local_result)[i * config->M + j] = result;
+                    }
+                }
             }
         }
     }
@@ -369,9 +426,7 @@ void compute_all_pairwise_distributed(void *input_matrix, void *result_matrix, C
     // Clean up
     free(local_matrix);
     free(local_result);
-    if (config->rank != 0) {
-        free(full_matrix);
-    }
+    free(column_buffer);
     free(local_info.row_counts);
     free(local_info.row_offsets);
 }

@@ -46,4 +46,8 @@ void print_results(void *result_matrix, Config *config);
 void distribute_matrix(void *input_matrix, void **local_matrix, Config *config, LocalInfo *local_info);
 void gather_results(void *result_matrix, void *local_result, Config *config, LocalInfo *local_info);
 
+// Helper functions for dot product computation
+float dot_product_float(const float* vec1, const float* vec2, int length);
+double dot_product_double(const double* vec1, const double* vec2, int length);
+
 #endif // ALL_PAIRWISE_H 
