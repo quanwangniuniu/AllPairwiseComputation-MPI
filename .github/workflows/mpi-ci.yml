@@ -2,10 +2,24 @@ name: MPI Project CI/CD
 
 on:
   push:
-    branches: [ main ]
+    branches: 
+      - main
+      - master
+    paths:
+      - '**.c'
+      - '**.h'
+      - 'CMakeLists.txt'
+      - '.github/workflows/**'
   pull_request:
-    branches: [ main ]
-  workflow_dispatch:  # Add manual trigger option
+    branches: 
+      - main
+      - master
+    paths:
+      - '**.c'
+      - '**.h'
+      - 'CMakeLists.txt'
+      - '.github/workflows/**'
+  workflow_dispatch:  # Optional manual trigger
 
 jobs:
   build-and-test:
@@ -23,11 +37,15 @@ jobs:
       run: |
         sudo apt-get install -y gcc g++ make cmake
         
+    - name: Clean Build Directory
+      run: |
+        rm -rf build
+        mkdir -p build
+        
     - name: Configure CMake
       run: |
-        mkdir -p build
         cd build
-        cmake ..
+        cmake -DCMAKE_BUILD_TYPE=Release ..
         
     - name: Build
       run: |
