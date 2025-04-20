@@ -1,0 +1,78 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"jsonFile" : "directory-.-Debug-d0094a50bb2071803777.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.10"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2
+					]
+				}
+			],
+			"name" : "Debug",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "AllPairwiseComputation-MPI",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "all_pairwise::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-all_pairwise-Debug-a4e36b7177336787c1ee.json",
+					"name" : "all_pairwise",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "test_all_pairwise::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-test_all_pairwise-Debug-479cf976d48100fb0d3f.json",
+					"name" : "test_all_pairwise",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "test_distributed::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-test_distributed-Debug-a89d08ace7c32dd76649.json",
+					"name" : "test_distributed",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "I:/COMP5426/Assignment2/AllPairwiseComputation-MPI/cmake-build-debug",
+		"source" : "I:/COMP5426/Assignment2/AllPairwiseComputation-MPI"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 5
+	}
+}

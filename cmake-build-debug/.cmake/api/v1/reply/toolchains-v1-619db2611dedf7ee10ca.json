@@ -1,0 +1,141 @@
+{
+	"kind" : "toolchains",
+	"toolchains" : 
+	[
+		{
+			"compiler" : 
+			{
+				"id" : "GNU",
+				"implicit" : 
+				{
+					"includeDirectories" : 
+					[
+						"D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/lib/gcc/x86_64-w64-mingw32/13.1.0/include",
+						"D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/include",
+						"D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/lib/gcc/x86_64-w64-mingw32/13.1.0/include-fixed",
+						"D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/x86_64-w64-mingw32/include"
+					],
+					"linkDirectories" : 
+					[
+						"D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/lib/gcc/x86_64-w64-mingw32/13.1.0",
+						"D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/lib/gcc",
+						"D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/x86_64-w64-mingw32/lib",
+						"D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/lib"
+					],
+					"linkFrameworkDirectories" : [],
+					"linkLibraries" : 
+					[
+						"mingw32",
+						"gcc",
+						"moldname",
+						"mingwex",
+						"kernel32",
+						"pthread",
+						"advapi32",
+						"shell32",
+						"user32",
+						"kernel32",
+						"iconv",
+						"mingw32",
+						"gcc",
+						"moldname",
+						"mingwex",
+						"kernel32"
+					]
+				},
+				"path" : "D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/bin/gcc.exe",
+				"version" : "13.1.0"
+			},
+			"language" : "C",
+			"sourceFileExtensions" : 
+			[
+				"c",
+				"m"
+			]
+		},
+		{
+			"compiler" : 
+			{
+				"id" : "GNU",
+				"implicit" : 
+				{
+					"includeDirectories" : 
+					[
+						"D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++",
+						"D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/x86_64-w64-mingw32",
+						"D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/backward",
+						"D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/lib/gcc/x86_64-w64-mingw32/13.1.0/include",
+						"D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/include",
+						"D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/lib/gcc/x86_64-w64-mingw32/13.1.0/include-fixed",
+						"D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/x86_64-w64-mingw32/include"
+					],
+					"linkDirectories" : 
+					[
+						"D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/lib/gcc/x86_64-w64-mingw32/13.1.0",
+						"D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/lib/gcc",
+						"D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/x86_64-w64-mingw32/lib",
+						"D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/lib"
+					],
+					"linkFrameworkDirectories" : [],
+					"linkLibraries" : 
+					[
+						"stdc++",
+						"mingw32",
+						"gcc_s",
+						"gcc",
+						"moldname",
+						"mingwex",
+						"kernel32",
+						"pthread",
+						"advapi32",
+						"shell32",
+						"user32",
+						"kernel32",
+						"iconv",
+						"mingw32",
+						"gcc_s",
+						"gcc",
+						"moldname",
+						"mingwex",
+						"kernel32"
+					]
+				},
+				"path" : "D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/bin/g++.exe",
+				"version" : "13.1.0"
+			},
+			"language" : "CXX",
+			"sourceFileExtensions" : 
+			[
+				"C",
+				"M",
+				"c++",
+				"cc",
+				"cpp",
+				"cxx",
+				"mm",
+				"mpp",
+				"CPP",
+				"ixx",
+				"cppm"
+			]
+		},
+		{
+			"compiler" : 
+			{
+				"implicit" : {},
+				"path" : "D:/developer/soft/Clion/CLion-2023.2.2/bin/mingw/bin/windres.exe"
+			},
+			"language" : "RC",
+			"sourceFileExtensions" : 
+			[
+				"rc",
+				"RC"
+			]
+		}
+	],
+	"version" : 
+	{
+		"major" : 1,
+		"minor" : 0
+	}
+}
