@@ -3,8 +3,8 @@
 #include <mpi.h>
 #include "all_pairwise.h"
 
-// Define student ID (replace with your actual last 4 digits)
-#define STUDENT_ID 1234
+// Define student ID (last 9 digits of SID)
+#define STUDENT_ID 540156556
 
 int main(int argc, char *argv[]) {
     // Initialize MPI
@@ -30,6 +30,7 @@ int main(int argc, char *argv[]) {
     // Only process 0 handles command line arguments
     if (config.rank == 0) {
         if (!parse_arguments(argc, argv, &config)) {
+            fprintf(stderr, "Error: Failed to parse arguments. Aborting.\n");
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
     }
@@ -39,11 +40,12 @@ int main(int argc, char *argv[]) {
     
     // Print configuration
     if (config.rank == 0) {
-        printf("Configuration:\n");
-        printf("M: %d\n", config.M);
-        printf("N: %d\n", config.N);
+        printf("\nConfiguration:\n");
+        printf("M (sequences): %d\n", config.M);
+        printf("N (sequence length): %d\n", config.N);
         printf("Data type: %s\n", config.is_float ? "float" : "double");
         printf("Student ID: %d\n", config.student_id);
+        printf("Number of processes: %d\n\n", config.num_procs);
     }
     
     // Allocate matrices

@@ -17,7 +17,11 @@
 bool parse_arguments(int argc, char *argv[], Config *config) {
     // Check number of arguments
     if (argc != 4) {
-        fprintf(stderr, "Error: Incorrect number of arguments. Usage: %s M N float|double\n", argv[0]);
+        fprintf(stderr, "Error: Incorrect number of arguments (%d provided, 3 required)\n", argc - 1);
+        fprintf(stderr, "Usage: %s M N float|double\n", argv[0]);
+        fprintf(stderr, "  M: Number of sequences (positive integer)\n");
+        fprintf(stderr, "  N: Length of each sequence (positive integer)\n");
+        fprintf(stderr, "  Data type: 'float' or 'double'\n");
         return false;
     }
 
@@ -26,7 +30,8 @@ bool parse_arguments(int argc, char *argv[], Config *config) {
     errno = 0;
     long M = strtol(argv[1], &endptr, 10);
     if (errno != 0 || *endptr != '\0' || M <= 0) {
-        fprintf(stderr, "Error: M must be a positive integer\n");
+        fprintf(stderr, "Error: Invalid value for M ('%s')\n", argv[1]);
+        fprintf(stderr, "M must be a positive integer\n");
         return false;
     }
     config->M = (int)M;
@@ -35,7 +40,8 @@ bool parse_arguments(int argc, char *argv[], Config *config) {
     errno = 0;
     long N = strtol(argv[2], &endptr, 10);
     if (errno != 0 || *endptr != '\0' || N <= 0) {
-        fprintf(stderr, "Error: N must be a positive integer\n");
+        fprintf(stderr, "Error: Invalid value for N ('%s')\n", argv[2]);
+        fprintf(stderr, "N must be a positive integer\n");
         return false;
     }
     config->N = (int)N;
@@ -46,7 +52,8 @@ bool parse_arguments(int argc, char *argv[], Config *config) {
     } else if (strcmp(argv[3], "double") == 0) {
         config->is_float = false;
     } else {
-        fprintf(stderr, "Error: Data type must be either 'float' or 'double'\n");
+        fprintf(stderr, "Error: Invalid data type ('%s')\n", argv[3]);
+        fprintf(stderr, "Data type must be either 'float' or 'double' (case-sensitive)\n");
         return false;
     }
 
@@ -240,6 +247,13 @@ void distribute_matrix(void *input_matrix, void **local_matrix, Config *config, 
  * @param local_result Local result portion
  * @param config Program configuration
  * @param local_info Local computation information
+ * 
+ * Note on Synchronization:
+ * MPI_Gatherv is a collective operation that implicitly synchronizes all processes.
+ * No explicit barriers are needed because:
+ * 1. All processes must call MPI_Gatherv before any can proceed
+ * 2. Process 0 cannot modify the result matrix until all data is received
+ * 3. Other processes cannot proceed until their data is sent
  */
 void gather_results(void *result_matrix, void *local_result, Config *config, LocalInfo *local_info) {
     // Calculate result counts and offsets
@@ -252,7 +266,7 @@ void gather_results(void *result_matrix, void *local_result, Config *config, Loc
         result_offsets[i] = local_info->row_offsets[i] * config->M;
     }
     
-    // Gather results
+    // Gather results using MPI_Gatherv (collective operation)
     if (config->is_float) {
         MPI_Gatherv(local_result, 
                    local_info->local_rows * config->M, 
@@ -265,6 +279,7 @@ void gather_results(void *result_matrix, void *local_result, Config *config, Loc
                    MPI_COMM_WORLD);
         
         // Zero out lower triangle (only in rank 0)
+        // This is safe because MPI_Gatherv ensures all data is received
         if (config->rank == 0) {
             float *result = (float*)result_matrix;
             for (int i = 0; i < config->M; i++) {
@@ -285,6 +300,7 @@ void gather_results(void *result_matrix, void *local_result, Config *config, Loc
                    MPI_COMM_WORLD);
         
         // Zero out lower triangle (only in rank 0)
+        // This is safe because MPI_Gatherv ensures all data is received
         if (config->rank == 0) {
             double *result = (double*)result_matrix;
             for (int i = 0; i < config->M; i++) {
@@ -320,102 +336,113 @@ void compute_all_pairwise_distributed(void *input_matrix, void *result_matrix, C
     // Initialize local result to zero
     memset(local_result, 0, local_info.local_rows * config->M * element_size);
     
-    // Temporary buffer for receiving columns
-    void *column_buffer = malloc(config->N * element_size);
+    // Allocate communication buffers
+    void *send_buffer = malloc(config->N * element_size);
+    void *recv_buffer = malloc(config->N * element_size);
+    MPI_Request *send_requests = malloc(config->num_procs * sizeof(MPI_Request));
+    MPI_Request *recv_requests = malloc(config->num_procs * sizeof(MPI_Request));
+    MPI_Status *statuses = malloc(config->num_procs * sizeof(MPI_Status));
     
-    // Compute local portion of result matrix
+    // Process each local row
     for (int i = 0; i < local_info.local_rows; i++) {
         int global_i = local_info.start_row + i;
         
-        // Process 0 has its own data, others need to request it
-        for (int j = global_i; j < config->M; j++) {
-            // If we need data from another process
-            if (j >= local_info.start_row && j < local_info.end_row) {
-                // Data is local, use it directly
-                if (config->is_float) {
-                    float result = dot_product_float(
-                        (float*)local_matrix + i * config->N,
-                        (float*)local_matrix + (j - local_info.start_row) * config->N,
-                        config->N
-                    );
-                    ((float*)local_result)[i * config->M + j] = result;
-                } else {
-                    double result = dot_product_double(
-                        (double*)local_matrix + i * config->N,
-                        (double*)local_matrix + (j - local_info.start_row) * config->N,
-                        config->N
-                    );
-                    ((double*)local_result)[i * config->M + j] = result;
-                }
+        // First compute dot products with local data
+        for (int j = global_i; j < local_info.end_row; j++) {
+            if (config->is_float) {
+                float result = dot_product_float(
+                    (float*)local_matrix + i * config->N,
+                    (float*)local_matrix + (j - local_info.start_row) * config->N,
+                    config->N
+                );
+                ((float*)local_result)[i * config->M + j] = result;
             } else {
-                // Find which process has the data we need
-                int target_rank = 0;
-                for (int p = 0; p < config->num_procs; p++) {
-                    if (j >= local_info.row_offsets[p] && 
-                        j < local_info.row_offsets[p] + local_info.row_counts[p]) {
-                        target_rank = p;
-                        break;
-                    }
-                }
+                double result = dot_product_double(
+                    (double*)local_matrix + i * config->N,
+                    (double*)local_matrix + (j - local_info.start_row) * config->N,
+                    config->N
+                );
+                ((double*)local_result)[i * config->M + j] = result;
+            }
+        }
+        
+        // Then handle non-local data using non-blocking communication
+        int num_requests = 0;
+        
+        // Post receives for needed data
+        for (int p = 0; p < config->num_procs; p++) {
+            if (p != config->rank) {
+                int start_j = local_info.row_offsets[p];
+                int end_j = start_j + local_info.row_counts[p];
                 
-                // Request the column from the target process
-                if (config->rank == target_rank) {
-                    // Send the column
+                // Only receive if we need data from this process
+                if (end_j > global_i && start_j < config->M) {
                     if (config->is_float) {
-                        MPI_Send(
-                            (float*)local_matrix + (j - local_info.start_row) * config->N,
-                            config->N,
-                            MPI_FLOAT,
-                            config->rank,
-                            0,
-                            MPI_COMM_WORLD
-                        );
+                        MPI_Irecv(recv_buffer, config->N, MPI_FLOAT, p, 0,
+                                MPI_COMM_WORLD, &recv_requests[num_requests++]);
                     } else {
-                        MPI_Send(
-                            (double*)local_matrix + (j - local_info.start_row) * config->N,
-                            config->N,
-                            MPI_DOUBLE,
-                            config->rank,
-                            0,
-                            MPI_COMM_WORLD
-                        );
-                    }
-                } else if (config->rank == 0) {
-                    // Receive the column
-                    if (config->is_float) {
-                        MPI_Recv(
-                            column_buffer,
-                            config->N,
-                            MPI_FLOAT,
-                            target_rank,
-                            0,
-                            MPI_COMM_WORLD,
-                            MPI_STATUS_IGNORE
-                        );
-                        float result = dot_product_float(
-                            (float*)local_matrix + i * config->N,
-                            (float*)column_buffer,
-                            config->N
-                        );
-                        ((float*)local_result)[i * config->M + j] = result;
-                    } else {
-                        MPI_Recv(
-                            column_buffer,
-                            config->N,
-                            MPI_DOUBLE,
-                            target_rank,
-                            0,
-                            MPI_COMM_WORLD,
-                            MPI_STATUS_IGNORE
-                        );
-                        double result = dot_product_double(
-                            (double*)local_matrix + i * config->N,
-                            (double*)column_buffer,
-                            config->N
-                        );
-                        ((double*)local_result)[i * config->M + j] = result;
+                        MPI_Irecv(recv_buffer, config->N, MPI_DOUBLE, p, 0,
+                                MPI_COMM_WORLD, &recv_requests[num_requests++]);
                     }
                 }
+            }
+        }
+        
+        // Send our row to other processes that need it
+        for (int p = 0; p < config->num_procs; p++) {
+            if (p != config->rank) {
+                // Copy row to send buffer
+                if (config->is_float) {
+                    memcpy(send_buffer, (float*)local_matrix + i * config->N,
+                           config->N * element_size);
+                    MPI_Isend(send_buffer, config->N, MPI_FLOAT, p, 0,
+                            MPI_COMM_WORLD, &send_requests[p]);
+                } else {
+                    memcpy(send_buffer, (double*)local_matrix + i * config->N,
+                           config->N * element_size);
+                    MPI_Isend(send_buffer, config->N, MPI_DOUBLE, p, 0,
+                            MPI_COMM_WORLD, &send_requests[p]);
+                }
+            }
+        }
+        
+        // Wait for all communication to complete
+        if (num_requests > 0) {
+            MPI_Waitall(num_requests, recv_requests, statuses);
+        }
+        
+        // Process received data
+        for (int p = 0; p < config->num_procs; p++) {
+            if (p != config->rank) {
+                int start_j = local_info.row_offsets[p];
+                int end_j = start_j + local_info.row_counts[p];
+                
+                if (end_j > global_i && start_j < config->M) {
+                    for (int j = MAX(start_j, global_i); j < end_j; j++) {
+                        if (config->is_float) {
+                            float result = dot_product_float(
+                                (float*)local_matrix + i * config->N,
+                                (float*)recv_buffer,
+                                config->N
+                            );
+                            ((float*)local_result)[i * config->M + j] = result;
+                        } else {
+                            double result = dot_product_double(
+                                (double*)local_matrix + i * config->N,
+                                (double*)recv_buffer,
+                                config->N
+                            );
+                            ((double*)local_result)[i * config->M + j] = result;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Cancel any outstanding sends
+        for (int p = 0; p < config->num_procs; p++) {
+            if (p != config->rank) {
+                MPI_Request_free(&send_requests[p]);
             }
         }
     }
@@ -426,7 +453,11 @@ void compute_all_pairwise_distributed(void *input_matrix, void *result_matrix, C
     // Clean up
     free(local_matrix);
     free(local_result);
-    free(column_buffer);
+    free(send_buffer);
+    free(recv_buffer);
+    free(send_requests);
+    free(recv_requests);
+    free(statuses);
     free(local_info.row_counts);
     free(local_info.row_offsets);
 }
@@ -482,6 +513,12 @@ void verify_results(void *sequential_result, void *parallel_result, Config *conf
     if (config->rank == 0) {
         bool match = true;
         double max_diff = 0.0;
+        int max_diff_i = -1;
+        int max_diff_j = -1;
+        int mismatch_count = 0;
+        const int MAX_MISMATCHES_TO_PRINT = 5;
+        
+        printf("\nVerifying results...\n");
         
         if (config->is_float) {
             float *seq = (float*)sequential_result;
@@ -492,7 +529,16 @@ void verify_results(void *sequential_result, void *parallel_result, Config *conf
                     float diff = fabs(seq[i * config->M + j] - par[i * config->M + j]);
                     if (diff > 1e-6) {
                         match = false;
-                        max_diff = diff > max_diff ? diff : max_diff;
+                        if (diff > max_diff) {
+                            max_diff = diff;
+                            max_diff_i = i;
+                            max_diff_j = j;
+                        }
+                        if (mismatch_count < MAX_MISMATCHES_TO_PRINT) {
+                            printf("Mismatch at [%d,%d]: Sequential=%.6f, Parallel=%.6f, Diff=%.6f\n",
+                                   i, j, seq[i * config->M + j], par[i * config->M + j], diff);
+                        }
+                        mismatch_count++;
                     }
                 }
             }
@@ -505,7 +551,16 @@ void verify_results(void *sequential_result, void *parallel_result, Config *conf
                     double diff = fabs(seq[i * config->M + j] - par[i * config->M + j]);
                     if (diff > 1e-12) {
                         match = false;
-                        max_diff = diff > max_diff ? diff : max_diff;
+                        if (diff > max_diff) {
+                            max_diff = diff;
+                            max_diff_i = i;
+                            max_diff_j = j;
+                        }
+                        if (mismatch_count < MAX_MISMATCHES_TO_PRINT) {
+                            printf("Mismatch at [%d,%d]: Sequential=%.12f, Parallel=%.12f, Diff=%.12f\n",
+                                   i, j, seq[i * config->M + j], par[i * config->M + j], diff);
+                        }
+                        mismatch_count++;
                     }
                 }
             }
@@ -514,8 +569,14 @@ void verify_results(void *sequential_result, void *parallel_result, Config *conf
         if (match) {
             printf("Verification successful: Sequential and parallel results match.\n");
         } else {
-            printf("Verification failed: Maximum difference = %e\n", max_diff);
+            printf("\nVerification failed:\n");
+            printf("Total mismatches: %d\n", mismatch_count);
+            printf("Maximum difference = %e at position [%d,%d]\n", max_diff, max_diff_i, max_diff_j);
+            if (mismatch_count > MAX_MISMATCHES_TO_PRINT) {
+                printf("(Showing only first %d mismatches)\n", MAX_MISMATCHES_TO_PRINT);
+            }
         }
+        printf("\n");
     }
 }
 

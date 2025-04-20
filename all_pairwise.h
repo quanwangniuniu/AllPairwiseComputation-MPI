@@ -5,6 +5,9 @@
 #include <stdbool.h>
 #include <time.h>
 
+// Utility macro for finding maximum of two numbers
+#define MAX(a,b) ((a) > (b) ? (a) : (b))
+
 // Structure to hold program configuration
 typedef struct {
     int M;              // Number of sequences
