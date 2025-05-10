@@ -4,7 +4,7 @@
 #include "all_pairwise.h"
 
 // Define student ID (last 9 digits of SID)
-#define STUDENT_ID 540156556
+#define STUDENT_ID 540106556
 
 int main(int argc, char *argv[]) {
     // Initialize MPI
@@ -17,6 +17,10 @@ int main(int argc, char *argv[]) {
     
     // Set student ID
     config.student_id = STUDENT_ID;
+    
+    // Set verification tolerances
+    config.float_tolerance = 1e-6;
+    config.double_tolerance = 1e-12;
     
     // Print debug information
     if (config.rank == 0) {
@@ -81,13 +85,18 @@ int main(int argc, char *argv[]) {
         }
         
         // Then run distributed computation
+        if (config.rank == 0) {
+            printf("\nStarting distributed computation...\n");
+        }
+        
+        // Time only the computation part
         start_timer(&timer);
         compute_all_pairwise(input_matrix, result_matrix, &config);
         stop_timer(&timer);
         
         if (config.rank == 0) {
             timer.parallel_time = get_elapsed_time(&timer);
-            printf("Parallel computation time: %f seconds\n", timer.parallel_time);
+            printf("Parallel computation time (excluding communication): %f seconds\n", timer.parallel_time);
             printf("Speedup: %f\n", timer.sequential_time / timer.parallel_time);
             
             // Verify results

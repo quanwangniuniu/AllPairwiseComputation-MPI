@@ -16,6 +16,8 @@ typedef struct {
     int num_procs;      // Number of MPI processes
     int rank;           // Current process rank
     int student_id;     // Last 4 digits of student ID for random seed
+    double float_tolerance;  // Tolerance for float comparisons
+    double double_tolerance; // Tolerance for double comparisons
 } Config;
 
 // Structure to hold timing information

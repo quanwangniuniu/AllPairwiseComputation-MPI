@@ -1,8 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
-#include <time.h>
 #include <mpi.h>
 #include <math.h>
 #include "all_pairwise.h"
@@ -58,7 +56,7 @@ bool parse_arguments(int argc, char *argv[], Config *config) {
     }
 
     // Set student ID for random seed (replace with actual last 4 digits)
-    config->student_id = 1234; // TODO: Replace with actual student ID
+    config->student_id = 6556; // Last 4 digits of student ID 540106556
 
     return true;
 }
@@ -391,17 +389,26 @@ void compute_all_pairwise_distributed(void *input_matrix, void *result_matrix, C
         // Send our row to other processes that need it
         for (int p = 0; p < config->num_procs; p++) {
             if (p != config->rank) {
-                // Copy row to send buffer
-                if (config->is_float) {
-                    memcpy(send_buffer, (float*)local_matrix + i * config->N,
-                           config->N * element_size);
-                    MPI_Isend(send_buffer, config->N, MPI_FLOAT, p, 0,
-                            MPI_COMM_WORLD, &send_requests[p]);
+                int start_j = local_info.row_offsets[p];
+                int end_j = start_j + local_info.row_counts[p];
+                
+                // Only send if the receiving process needs this row
+                if (end_j > global_i && start_j < config->M) {
+                    // Copy row to send buffer
+                    if (config->is_float) {
+                        memcpy(send_buffer, (float*)local_matrix + i * config->N,
+                               config->N * element_size);
+                        MPI_Isend(send_buffer, config->N, MPI_FLOAT, p, 0,
+                                MPI_COMM_WORLD, &send_requests[p]);
+                    } else {
+                        memcpy(send_buffer, (double*)local_matrix + i * config->N,
+                               config->N * element_size);
+                        MPI_Isend(send_buffer, config->N, MPI_DOUBLE, p, 0,
+                                MPI_COMM_WORLD, &send_requests[p]);
+                    }
                 } else {
-                    memcpy(send_buffer, (double*)local_matrix + i * config->N,
-                           config->N * element_size);
-                    MPI_Isend(send_buffer, config->N, MPI_DOUBLE, p, 0,
-                            MPI_COMM_WORLD, &send_requests[p]);
+                    // Initialize request to MPI_REQUEST_NULL for processes we don't send to
+                    send_requests[p] = MPI_REQUEST_NULL;
                 }
             }
         }
@@ -527,7 +534,7 @@ void verify_results(void *sequential_result, void *parallel_result, Config *conf
             for (int i = 0; i < config->M; i++) {
                 for (int j = i; j < config->M; j++) {
                     float diff = fabs(seq[i * config->M + j] - par[i * config->M + j]);
-                    if (diff > 1e-6) {
+                    if (diff > config->float_tolerance) {
                         match = false;
                         if (diff > max_diff) {
                             max_diff = diff;
@@ -549,7 +556,7 @@ void verify_results(void *sequential_result, void *parallel_result, Config *conf
             for (int i = 0; i < config->M; i++) {
                 for (int j = i; j < config->M; j++) {
                     double diff = fabs(seq[i * config->M + j] - par[i * config->M + j]);
-                    if (diff > 1e-12) {
+                    if (diff > config->double_tolerance) {
                         match = false;
                         if (diff > max_diff) {
                             max_diff = diff;
